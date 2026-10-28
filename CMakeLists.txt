@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 find_package(gz-cmake3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(mocap_interfaces REQUIRED)
+find_package(mocap4r2_msgs REQUIRED)
 find_package(mocap4r2_control REQUIRED)
 find_package(rclcpp REQUIRED)
 
@@ -29,6 +30,7 @@ ament_target_dependencies(mocap_gz_ros
   rclcpp
   geometry_msgs
   mocap_interfaces
+  mocap4r2_msgs
   mocap4r2_control
 )
 
@@ -45,6 +47,6 @@ install(DIRECTORY
 install(TARGETS mocap_gz_ros DESTINATION $ENV{HOME}/.gz/sim/plugins)
 
 ament_export_libraries(mocap_gz_ros)
-ament_export_dependencies(gz-cmake3 gz-plugin2 gz-sim8 geometry_msgs mocap_interfaces mocap4r2_control rclcpp)
+ament_export_dependencies(gz-cmake3 gz-plugin2 gz-sim8 geometry_msgs mocap_interfaces mocap4r2_msgs mocap4r2_control rclcpp)
 
 ament_package()

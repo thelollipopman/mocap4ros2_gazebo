@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
+#include <gz/math/Vector3.hh>
+
 #include "mocap4r2_gz_plugin/mocap_gz_ros.hpp"
+#include "mocap4r2_msgs/msg/marker.hpp"
+#include "mocap4r2_msgs/msg/rigid_body.hpp"
+#include "mocap4r2_msgs/msg/rigid_bodies.hpp"
 #include "mocap4r2_control/ControlledLifecycleNode.hpp"
 
 using namespace gz;
@@ -21,6 +27,36 @@ using namespace systems;
 
 using CallbackReturnT =
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+namespace
+{
+// Convert only at the ROS output boundary; retain upstream internal types.
+mocap4r2_msgs::msg::RigidBodies to_rigid_bodies(
+  const mocap_interfaces::msg::RigidBodyArray & source)
+{
+  mocap4r2_msgs::msg::RigidBodies output;
+  output.header = source.header;
+  output.frame_number = source.seq;
+  output.rigidbodies.reserve(source.rigid_bodies.size());
+
+  for (const auto & body : source.rigid_bodies) {
+    mocap4r2_msgs::msg::RigidBody converted;
+    converted.rigid_body_name = body.rigid_body_name;
+    converted.pose = body.pose;
+    converted.markers.reserve(body.markers.size());
+    for (const auto & marker : body.markers) {
+      mocap4r2_msgs::msg::Marker converted_marker;
+      converted_marker.id_type = marker.id_type;
+      converted_marker.marker_index = marker.marker_index;
+      converted_marker.marker_name = marker.marker_name;
+      converted_marker.translation = marker.translation;
+      converted.markers.push_back(converted_marker);
+    }
+    output.rigidbodies.push_back(converted);
+  }
+  return output;
+}
+}  // namespace
 
 class gz::sim::systems::MocapGzRosPrivate : public mocap4r2_control::ControlledLifecycleNode
 {
@@ -51,11 +87,11 @@ public:
 
   rclcpp_lifecycle::LifecyclePublisher<mocap_interfaces::msg::MarkerArray>::SharedPtr
     mocap_markers_pub_;
-  rclcpp_lifecycle::LifecyclePublisher<mocap_interfaces::msg::RigidBodyArray>::SharedPtr
+  rclcpp_lifecycle::LifecyclePublisher<mocap4r2_msgs::msg::RigidBodies>::SharedPtr
     mocap_rigid_body_pub_;
   rclcpp::Service<mocap_interfaces::srv::CreateRigidBody>::SharedPtr
     mocap_create_rigid_body_service_;
-  int seq_{0};
+  std::uint32_t seq_{0};
 };
 
 MocapGzRosPrivate::MocapGzRosPrivate()
@@ -69,7 +105,7 @@ MocapGzRosPrivate::on_configure(const rclcpp_lifecycle::State & state)
 {
   mocap_markers_pub_ = create_publisher<mocap_interfaces::msg::MarkerArray>(
     "markers", rclcpp::QoS(1000));
-  mocap_rigid_body_pub_ = create_publisher<mocap_interfaces::msg::RigidBodyArray>(
+  mocap_rigid_body_pub_ = create_publisher<mocap4r2_msgs::msg::RigidBodies>(
     "rigid_bodies", rclcpp::QoS(1000));
   mocap_create_rigid_body_service_ = create_service<mocap_interfaces::srv::CreateRigidBody>(
     "create_rigid_body",
@@ -197,7 +233,7 @@ void MocapGzRos::PostUpdate(
   rbs.seq = impl_->seq_;
   rbs.header.frame_id = "map";
 
-  impl_->seq_;
+  ++impl_->seq_;
   int index = 1;
 
   for (int i = 0; i < impl_->rigid_links_.size(); i++) {
@@ -211,25 +247,28 @@ void MocapGzRos::PostUpdate(
     m1.header.stamp = impl_->now();
     m1.id_type = mocap_interfaces::msg::Marker::USE_INDEX;
     m1.marker_index = index++;
-    m1.translation.x = pos.X();
-    m1.translation.y = pos.Y();
-    m1.translation.z = pos.Z() + 0.05;
+    const auto marker1_world = pos + rot.RotateVector(math::Vector3d(0.0, 0.0, 0.05));
+    m1.translation.x = marker1_world.X();
+    m1.translation.y = marker1_world.Y();
+    m1.translation.z = marker1_world.Z();
 
     mocap_interfaces::msg::Marker m2;
     m2.header.stamp = impl_->now();
     m2.id_type = mocap_interfaces::msg::Marker::USE_INDEX;
     m2.marker_index = index++;
-    m2.translation.x = pos.X() + 0.02;
-    m2.translation.y = pos.Y();
-    m2.translation.z = pos.Z() + 0.03;
+    const auto marker2_world = pos + rot.RotateVector(math::Vector3d(0.02, 0.0, 0.03));
+    m2.translation.x = marker2_world.X();
+    m2.translation.y = marker2_world.Y();
+    m2.translation.z = marker2_world.Z();
 
     mocap_interfaces::msg::Marker m3;
     m3.header.stamp = impl_->now();
     m3.id_type = mocap_interfaces::msg::Marker::USE_INDEX;
     m3.marker_index = index++;
-    m3.translation.x = pos.X();
-    m3.translation.y = pos.Y() + 0.015;
-    m3.translation.z = pos.Z() + 0.03;
+    const auto marker3_world = pos + rot.RotateVector(math::Vector3d(0.0, 0.015, 0.03));
+    m3.translation.x = marker3_world.X();
+    m3.translation.y = marker3_world.Y();
+    m3.translation.z = marker3_world.Z();
 
     mocap_interfaces::msg::RigidBody rb;
     rb.header.stamp = impl_->now();
@@ -314,7 +353,7 @@ void MocapGzRos::PostUpdate(
   }
 
   if (impl_->mocap_rigid_body_pub_->get_subscription_count() > 0) {
-    impl_->mocap_rigid_body_pub_->publish(rbs);
+    impl_->mocap_rigid_body_pub_->publish(to_rigid_bodies(rbs));
   }
 }
 
